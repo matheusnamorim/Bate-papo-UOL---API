@@ -21,11 +21,18 @@ const userSchema = joi.object({
     name: joi.string().min(1).required()
 });
 
-server.get('/participants', (req,res) => {
+server.get('/participants', async (req,res) => {
     
-    db.collection('participants').find().toArray().then(data => {
-        res.send(data);
-    });
+    let arrayParticipants = [];
+    try {
+        arrayParticipants = await db.collection('participants').find().toArray();
+        arrayParticipants.map(value => delete value._id);
+        res.send(arrayParticipants);
+    } catch (error) {
+        res.status(500).send(error.message);
+        return;
+    }
+
 });
 
 server.post('/participants', async (req, res) => {
@@ -37,16 +44,19 @@ server.post('/participants', async (req, res) => {
     if(validation.error) {
         const message = validation.error.details.map(value => value.message);
         res.status(422).send(message);
+        return;
     }
 
     try {
         arrayParticipants = await db.collection('participants').find().toArray();
     } catch (error) {
         res.status(500).send(error.message);
+        return;
     }
 
     if(arrayParticipants.find(value => value.name === req.body.name) !== undefined){
         res.sendStatus(409);
+        return;
     }else{
         db.collection('participants').insertOne({name: req.body.name, lastStatus: Date.now()});
         db.collection('messages').insertOne({
@@ -56,6 +66,7 @@ server.post('/participants', async (req, res) => {
             type: 'status', 
             time: dayjs().format('hh:mm:ss')})
         res.sendStatus(201);
+        return;
     }
     
 });
