@@ -70,4 +70,23 @@ server.post('/participants', async (req, res) => {
     }
     
 });
+
+server.get('/messages', async (req, res) => {
+    const { limit } = req.query;
+    try {
+        const arrayMessages = await db.collection('messages').find().toArray();
+        arrayMessages.map(value => delete value._id);
+
+        if(Number.isInteger(Number(limit))){
+          let tam = arrayMessages.length - limit;
+          if(tam < 0) tam = 0;
+          res.send(arrayMessages.filter((value, index) => {if(index >= tam) return value;}));  
+        }else 
+            res.send(arrayMessages);
+    } catch (error) {
+        res.status(500).send(error.message);
+        return;
+    }
+});
+
 server.listen(5000, () => console.log('Listening on port 5000'));
