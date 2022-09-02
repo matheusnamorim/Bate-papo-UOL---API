@@ -151,4 +151,21 @@ server.post('/status', async (req, res) => {
     }
 });
 
+setInterval(async function(){
+    const list = await db.collection('participants').find().toArray();
+    list.forEach(element => {
+        if(element.lastStatus < (Date.now()-10000)){
+            db.collection('participants').deleteOne({name: element.name});
+            db.collection('messages').insertOne({
+                from: element.name, 
+                to: 'Todos', 
+                text: 'sai da sala...', 
+                type: 'status', 
+                time: dayjs().format('HH:mm:ss'
+                )}
+            )
+        }
+    });
+}, 15000);
+
 server.listen(5000, () => console.log('Listening on port 5000'));
