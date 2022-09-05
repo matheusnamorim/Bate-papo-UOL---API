@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from  'cors';
 import joi from 'joi';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import dayjs from 'dayjs';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -29,10 +29,8 @@ const userSchema2 = joi.object({
 
 server.get('/participants', async (req,res) => {
     
-    let arrayParticipants = [];
     try {
-        arrayParticipants = await db.collection('participants').find().toArray();
-        arrayParticipants.map(value => delete value._id);
+        const arrayParticipants = await db.collection('participants').find().toArray();
         res.send(arrayParticipants);
     } catch (error) {
         res.status(500).send(error.message);
@@ -43,7 +41,6 @@ server.get('/participants', async (req,res) => {
 
 server.post('/participants', async (req, res) => {
 
-    let arrayParticipants = [];
     const validation = userSchema.validate(req.body);
 
     if(validation.error) {
@@ -53,26 +50,27 @@ server.post('/participants', async (req, res) => {
     }
 
     try {
-        arrayParticipants = await db.collection('participants').find().toArray();
+        const arrayParticipants = await db.collection('participants').find().toArray();
+        if(arrayParticipants.find(value => value.name === req.body.name) !== undefined){
+            res.sendStatus(409);
+            return;
+        }else{
+            db.collection('participants').insertOne({name: req.body.name, lastStatus: Date.now()});
+            db.collection('messages').insertOne({
+                from: req.body.name, 
+                to: 'Todos', 
+                text: 'entra na sala...', 
+                type: 'status', 
+                time: dayjs().format('hh:mm:ss')})
+            res.sendStatus(201);
+            return;
+        }
     } catch (error) {
         res.status(500).send(error.message);
         return;
     }
 
-    if(arrayParticipants.find(value => value.name === req.body.name) !== undefined){
-        res.sendStatus(409);
-        return;
-    }else{
-        db.collection('participants').insertOne({name: req.body.name, lastStatus: Date.now()});
-        db.collection('messages').insertOne({
-            from: req.body.name, 
-            to: 'Todos', 
-            text: 'entra na sala...', 
-            type: 'status', 
-            time: dayjs().format('hh:mm:ss')})
-        res.sendStatus(201);
-        return;
-    }
+
     
 });
 
@@ -82,7 +80,6 @@ server.get('/messages', async (req, res) => {
     const { limit } = req.query;
     try {
         const arrayMessages = await db.collection('messages').find().toArray();
-        arrayMessages.map(value => delete value._id);
 
         const messagesFiltered = arrayMessages.filter(value => {
             if(value.type === 'private_message' && (value.from === user || value.to === user || value.to === 'Todos') || 
@@ -167,5 +164,28 @@ setInterval(async function(){
         }
     });
 }, 15000);
+
+server.delete('/messages/:id', async(req, res) => {
+    const { id } = req.params;
+    const { user } = req.headers;
+
+    try {
+        const message = await db.collection('messages').findOne({_id: ObjectId(id)});
+        if(message === null){
+            res.sendStatus(404);
+            return;
+        }else{
+            if(user !== message.from){
+                res.sendStatus(401);
+                return;
+            }
+            db.collection('messages').deleteOne({_id: ObjectId(id)});
+        }
+
+    } catch (error) {
+        res.status(500).send(error.message);
+        return;
+    }
+});
 
 server.listen(5000, () => console.log('Listening on port 5000'));
