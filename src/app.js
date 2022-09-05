@@ -170,8 +170,8 @@ server.delete('/messages/:id', async(req, res) => {
     const { user } = req.headers;
 
     try {
-        const message = await db.collection('messages').findOne({_id: ObjectId(id)});
-        if(message === null){
+        const message = await db.collection('messages').findOne({_id: new ObjectId(id)});
+        if(!message){
             res.sendStatus(404);
             return;
         }else{
@@ -179,9 +179,51 @@ server.delete('/messages/:id', async(req, res) => {
                 res.sendStatus(401);
                 return;
             }
-            db.collection('messages').deleteOne({_id: ObjectId(id)});
+            db.collection('messages').deleteOne({_id: new ObjectId(id)});
+            res.sendStatus(200);
+            return;
         }
 
+    } catch (error) {
+        res.status(500).send(error.message);
+        return;
+    }
+});
+
+server.put('/messages/:id', async(req, res) => {
+    const { id } = req.params;
+    const { user } = req.headers;
+    const { body } = req;
+    
+    const validation = userSchema2.validate(req.body, { abortEarly: false });
+    if(validation.error){
+        const message = validation.error.details.map(value => value.message);
+        res.status(422).send(message);
+        return;
+    }
+    try {
+        const participants = await db.collection('participants').findOne({name: user});
+        if(!participants){
+            res.sendStatus(422);
+            return;
+        }
+        const message = await db.collection('messages').findOne({_id: new ObjectId(id)});
+        if(!message){
+            res.sendStatus(404);
+            return;
+        }else{
+            if(user !== message.from){
+                res.sendStatus(401);
+                return;
+            }
+            db.collection('messages').updateOne({_id: new ObjectId(id)}, {$set: {
+                to: body.to,
+                text: body.text,
+                type: body.type
+            }});
+            res.sendStatus(200);
+            return;
+        }
     } catch (error) {
         res.status(500).send(error.message);
         return;
