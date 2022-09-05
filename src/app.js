@@ -3,6 +3,7 @@ import cors from  'cors';
 import joi from 'joi';
 import { MongoClient, ObjectId } from 'mongodb';
 import dayjs from 'dayjs';
+import {stripHtml} from 'string-strip-html';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -27,6 +28,14 @@ const userSchema2 = joi.object({
     type: joi.string().valid('message', 'private_message').required()
 });
 
+function sanitizeString(string){
+    if(string){
+        const str = stripHtml(string, {trimOnlySpaces: true}).result;
+        return str;
+    }
+    return;
+}
+
 server.get('/participants', async (req,res) => {
     
     try {
@@ -41,23 +50,25 @@ server.get('/participants', async (req,res) => {
 
 server.post('/participants', async (req, res) => {
 
-    const validation = userSchema.validate(req.body);
+    const userName = sanitizeString(req.body.name);
+    const validation = userSchema.validate({name: userName});
 
     if(validation.error) {
         const message = validation.error.details.map(value => value.message);
         res.status(422).send(message);
         return;
     }
-
+    
     try {
+        
         const arrayParticipants = await db.collection('participants').find().toArray();
-        if(arrayParticipants.find(value => value.name === req.body.name) !== undefined){
+        if(arrayParticipants.find(value => value.name === userName) !== undefined){
             res.sendStatus(409);
             return;
         }else{
-            db.collection('participants').insertOne({name: req.body.name, lastStatus: Date.now()});
+            db.collection('participants').insertOne({name: userName, lastStatus: Date.now()});
             db.collection('messages').insertOne({
-                from: req.body.name, 
+                from: userName, 
                 to: 'Todos', 
                 text: 'entra na sala...', 
                 type: 'status', 
@@ -69,9 +80,6 @@ server.post('/participants', async (req, res) => {
         res.status(500).send(error.message);
         return;
     }
-
-
-    
 });
 
 server.get('/messages', async (req, res) => {
@@ -104,8 +112,12 @@ server.get('/messages', async (req, res) => {
 
 server.post('/messages', async (req, res) => {
     
-    const { user } = req.headers;
-    const validation = userSchema2.validate(req.body, { abortEarly: false });
+    const userName = sanitizeString(req.headers.user);
+    const to = sanitizeString(req.body.to);
+    const text = sanitizeString(req.body.text);
+    const type = sanitizeString(req.body.type);
+
+    const validation = userSchema2.validate({to, text, type}, { abortEarly: false });
 
     if(validation.error){
         const message = validation.error.details.map(value => value.message);
@@ -114,13 +126,15 @@ server.post('/messages', async (req, res) => {
     }
     try {
         const arrayParticipants = await db.collection('participants').find().toArray();
-        if(arrayParticipants.find(value => value.name === user) === undefined) {
+        if(arrayParticipants.find(value => value.name === userName) === undefined) {
             res.sendStatus(422);
             return;
         }
         db.collection('messages').insertOne({
-            from: user, 
-            ...req.body,
+            from: userName, 
+            to: to,
+            text: text,
+            type: type,
             time: dayjs().format('HH:mm:ss')
         });
         res.sendStatus(201);
@@ -132,14 +146,14 @@ server.post('/messages', async (req, res) => {
 });
 
 server.post('/status', async (req, res) => {
-    const { user } = req.headers;
+    const userName = sanitizeString(req.headers.user);
     try {
         const arrayParticipants = await db.collection('participants').find().toArray();
-        if(arrayParticipants.find(value => value.name === user) === undefined){
+        if(arrayParticipants.find(value => value.name === userName) === undefined){
             res.sendStatus(404);
             return;
         }
-        db.collection('participants').updateOne({name: user}, {$set: {lastStatus: Date.now()}});
+        db.collection('participants').updateOne({name: userName}, {$set: {lastStatus: Date.now()}});
         res.sendStatus(200);
         return;
     } catch (error) {
@@ -167,7 +181,7 @@ setInterval(async function(){
 
 server.delete('/messages/:id', async(req, res) => {
     const { id } = req.params;
-    const { user } = req.headers;
+    const userName = sanitizeString(req.headers.user);
 
     try {
         const message = await db.collection('messages').findOne({_id: new ObjectId(id)});
@@ -175,7 +189,7 @@ server.delete('/messages/:id', async(req, res) => {
             res.sendStatus(404);
             return;
         }else{
-            if(user !== message.from){
+            if(userName !== message.from){
                 res.sendStatus(401);
                 return;
             }
@@ -192,17 +206,19 @@ server.delete('/messages/:id', async(req, res) => {
 
 server.put('/messages/:id', async(req, res) => {
     const { id } = req.params;
-    const { user } = req.headers;
-    const { body } = req;
+    const userName = sanitizeString(req.headers.user);
+    const to = sanitizeString(req.body.to);
+    const text = sanitizeString(req.body.text);
+    const type = sanitizeString(req.body.type);
     
-    const validation = userSchema2.validate(req.body, { abortEarly: false });
+    const validation = userSchema2.validate({to, text, type}, { abortEarly: false });
     if(validation.error){
         const message = validation.error.details.map(value => value.message);
         res.status(422).send(message);
         return;
     }
     try {
-        const participants = await db.collection('participants').findOne({name: user});
+        const participants = await db.collection('participants').findOne({name: userName});
         if(!participants){
             res.sendStatus(422);
             return;
@@ -212,14 +228,14 @@ server.put('/messages/:id', async(req, res) => {
             res.sendStatus(404);
             return;
         }else{
-            if(user !== message.from){
+            if(userName !== message.from){
                 res.sendStatus(401);
                 return;
             }
             db.collection('messages').updateOne({_id: new ObjectId(id)}, {$set: {
-                to: body.to,
-                text: body.text,
-                type: body.type
+                to: to,
+                text: text,
+                type: type
             }});
             res.sendStatus(200);
             return;
